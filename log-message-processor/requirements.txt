@@ -2,3 +2,4 @@ redis==2.10.6
 py_zipkin
 requests
 cython
+setuptools # for building py_zipkin
