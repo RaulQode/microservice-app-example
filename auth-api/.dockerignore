@@ -1,0 +1,10 @@
+.git
+.gitignore
+Dockerfile
+docker-compose.yml
+README.md
+Gopkg.toml
+Gopkg.lock
+vendor/
+auth-api
+*.log 

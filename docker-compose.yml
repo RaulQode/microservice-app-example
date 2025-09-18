@@ -1,0 +1,129 @@
+version: '3.8'
+
+services:
+  # Redis service for message queue
+  redis:
+    image: redis:7.0-alpine
+    container_name: microservice-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - microservice-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Authentication API (Go)
+  auth-api:
+    build:
+      context: ./auth-api
+      dockerfile: Dockerfile
+    container_name: microservice-auth-api
+    ports:
+      - "8000:8000"
+    environment:
+      - AUTH_API_PORT=8000
+      - USERS_API_ADDRESS=http://users-api:8083
+      - JWT_SECRET=PRFT
+    depends_on:
+      - users-api
+    networks:
+      - microservice-network
+    restart: unless-stopped
+    
+
+  # Users API (Java Spring Boot)
+  users-api:
+    build:
+      context: ./users-api
+      dockerfile: Dockerfile
+    container_name: microservice-users-api
+    ports:
+      - "8083:8083"
+    environment:
+      - SERVER_PORT=8083
+      - JWT_SECRET=PRFT
+      - JAVA_OPTS=-Xmx200m -Xms100m
+    networks:
+      - microservice-network
+    mem_limit: 400m
+    memswap_limit: 400m
+    restart: unless-stopped
+
+  # TODOs API (Node.js)
+  todos-api:
+    build:
+      context: ./todos-api
+      dockerfile: Dockerfile
+    container_name: microservice-todos-api
+    ports:
+      - "8082:8082"
+    environment:
+      - TODO_API_PORT=8082
+      - JWT_SECRET=PRFT
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=log_channel
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - microservice-network
+    restart: unless-stopped
+
+  # Log Message Processor (Python)
+  log-message-processor:
+    build:
+      context: ./log-message-processor
+      dockerfile: Dockerfile
+    container_name: microservice-log-processor
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=log_channel
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - microservice-network
+    restart: unless-stopped
+
+  # Frontend (Vue.js)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: microservice-frontend
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - AUTH_API_ADDRESS=http://auth-api:8000
+      - TODOS_API_ADDRESS=http://todos-api:8082
+    depends_on:
+      - auth-api
+      - todos-api
+    networks:
+      - microservice-network
+    restart: unless-stopped
+
+  zipkin:
+    image: openzipkin/zipkin:2.23
+    container_name: microservice-zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - microservice-network
+
+networks:
+  microservice-network:
+    driver: bridge
+    name: microservice-network
+
+volumes:
+  redis-data:
+    driver: local
