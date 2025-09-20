@@ -1,0 +1,59 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = "frontend-app"
+        DOCKER_REGISTRY = "geoffrey0pv"
+    }
+
+    stages {
+        stage('Detectar Cambios') {
+            when { changeset "frontend/**" }
+            steps {
+                echo "Cambios detectados en el directorio del frontend. Continuando..."
+            }
+        }
+
+        stage('Instalar Dependencias') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage('Construir para Producción') {
+            steps {
+                sh 'npm run build'
+            }
+        }
+
+        stage('Construir Imagen Docker') {
+            steps {
+                sh "docker build -t ${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)} ."
+                sh "docker tag ${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest-${env.BRANCH_NAME}"
+            }
+        }
+
+        stage('Publicar Imagen Docker') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh "echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin"
+                    sh "docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest-${env.BRANCH_NAME}"
+                }
+            }
+        }
+        
+    }
+    post {
+        success {
+            // Si el build es en la rama 'main', dispara el pipeline de integración
+            if (env.BRANCH_NAME == 'main') {
+                echo "Disparando el pipeline de integración..."
+                build job: 'integration-pipeline',
+                      parameters: [
+                          string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
+                          string(name: 'IMAGE_TAG', value: "latest-main")
+                      ]
+            }
+        }
+    }
+}

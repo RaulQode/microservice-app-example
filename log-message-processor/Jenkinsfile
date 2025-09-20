@@ -1,0 +1,54 @@
+pipeline {
+    agent {
+        // Usa un agente de Jenkins que tenga Python instalado
+        docker { image 'python:3.9-slim' }
+    }
+
+    environment {
+        IMAGE_NAME = "log-message-processor"
+        DOCKER_REGISTRY = "geoffrey0pv"
+    }
+
+    stages {
+        stage('Detectar Cambios') {
+            when { changeset "log-message-processor/**" }
+            steps {
+                echo "Cambios detectados en el log-message-processor. Continuando..."
+            }
+        }
+
+        stage('Instalar Dependencias') {
+            steps {
+                sh 'pip install -r requirements.txt'
+            }
+        }
+
+        stage('Construir Imagen Docker') {
+            steps {
+                sh "docker build -t ${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)} ."
+                sh "docker tag ${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest-${env.BRANCH_NAME}"
+            }
+        }
+
+        stage('Publicar Imagen Docker') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh "echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin"
+                    sh "docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest-${env.BRANCH_NAME}"
+                }
+            }
+        }
+    }
+    post {
+        success {
+            if (env.BRANCH_NAME == 'main') {
+                echo "Disparando el pipeline de integración..."
+                build job: 'integration-pipeline',
+                      parameters: [
+                          string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
+                          string(name: 'IMAGE_TAG', value: "latest-main")
+                      ]
+            }
+        }
+    }
+}

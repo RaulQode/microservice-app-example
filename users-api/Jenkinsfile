@@ -1,0 +1,54 @@
+pipeline {
+    agent {
+        // Usa un agente de Jenkins que tenga JDK y Maven instalados
+        docker { image 'maven:3.8.4-openjdk-11' }
+    }
+
+    environment {
+        IMAGE_NAME = "users-api"
+        DOCKER_REGISTRY = "tu-usuario-docker"
+    }
+
+    stages {
+        stage('Detectar Cambios') {
+            when { changeset "users-api/**" }
+            steps {
+                echo "Cambios detectados en el users-api. Continuando..."
+            }
+        }
+
+        stage('Compilar y Probar') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+
+        stage('Construir Imagen Docker') {
+            steps {
+                sh "docker build -t ${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)} ."
+                sh "docker tag ${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest-${env.BRANCH_NAME}"
+            }
+        }
+
+        stage('Publicar Imagen Docker') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh "echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin"
+                    sh "docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest-${env.BRANCH_NAME}"
+                }
+            }
+        }
+    }
+    post {
+        success {
+            if (env.BRANCH_NAME == 'main') {
+                echo "Disparando el pipeline de integración..."
+                build job: 'integration-pipeline',
+                      parameters: [
+                          string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
+                          string(name: 'IMAGE_TAG', value: "latest-main")
+                      ]
+            }
+        }
+    }
+}
