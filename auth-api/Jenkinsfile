@@ -1,4 +1,5 @@
 pipeline {
+
     agent any
 
     environment {
@@ -32,11 +33,8 @@ pipeline {
                     script {
                         def shortCommit = env.GIT_COMMIT.substring(0,7)
                         def imageTag = "latest-${env.BRANCH_NAME}"
-                        
                         def customImage = docker.build("${IMAGE_NAME}:${shortCommit}", ".")
-                        
                         customImage.tag("${env.DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${imageTag}")
-                        
                         env.FINAL_IMAGE_TAG = imageTag
                     }
                 }
@@ -45,23 +43,27 @@ pipeline {
 
         stage('Push Docker Image') {
             steps {
-                docker.withRegistry("https://registry.hub.docker.com", 'dockerhub-credentials') {
-                    docker.image("${env.DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}").push()
+                script {
+                    docker.withRegistry("https://registry.hub.docker.com", 'dockerhub-credentials') {
+                        docker.image("${env.DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}").push()
+                    }
+                    echo "Imagen publicada: ${env.DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}"
                 }
-                echo "Imagen publicada: ${env.DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}"
             }
         }
     }
 
     post {
         success {
-            if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master') {
-                echo "Disparando el pipeline de integración..."
-                build job: 'microservices-integration/master',
-                      parameters: [
-                          string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
-                          string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
-                      ]
+            script {
+                if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master') {
+                    echo "Disparando el pipeline de integración..."
+                    build job: 'microservices-integration/master',
+                          parameters: [
+                              string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
+                              string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
+                          ]
+                }
             }
         }
         always {
