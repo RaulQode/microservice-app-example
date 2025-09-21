@@ -44,7 +44,6 @@ pipeline {
                                 
                                 # Verificar binario
                                 ls -la auth-api
-                                file auth-api
                             '''
                         }
                     }
