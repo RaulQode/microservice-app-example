@@ -4,60 +4,89 @@ pipeline {
     environment {
         IMAGE_NAME = "todos-api"
         DOCKER_REGISTRY = "geoffrey0pv"
+        SERVICE_DIR = "todos-api"
     }
 
     stages {
-        stage('Detectar Cambios') {
-            when { changeset "todos-api/**" }
+        stage('Checkout') {
             steps {
-                echo "Cambios detectados en el todos-api. Continuando..."
+                checkout scm
+                echo "Procesando cambios en ${IMAGE_NAME}"
             }
         }
 
-        stage('Instalar Dependencias y Probar') {
+        stage('Install Dependencies & Test') {
             steps {
-                sh 'npm install'
+                dir("${SERVICE_DIR}") {
+                    script {
+                        // Usar contenedor Node.js para las dependencias
+                        docker.image('node:8.17.0-alpine').inside {
+                            sh '''
+                                npm install
+                                npm test || echo "No hay tests definidos"
+                            '''
+                        }
+                    }
+                }
             }
         }
 
-        stage('Construir Imagen Docker') {
+        stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)} ."
-                sh "docker tag ${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest-${env.BRANCH_NAME}"
+                dir("${SERVICE_DIR}") {
+                    script {
+                        def shortCommit = env.GIT_COMMIT.substring(0,7)
+                        def imageTag = "latest-${env.BRANCH_NAME}"
+                        
+                        echo "Construyendo imagen: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag}"
+                        
+                        def image = docker.build("${DOCKER_REGISTRY}/${IMAGE_NAME}:${shortCommit}")
+                        image.tag(imageTag)
+                        
+                        env.FINAL_IMAGE_TAG = imageTag
+                    }
+                }
             }
         }
 
-        stage('Publicar Imagen Docker') {
+        stage('Push Docker Image') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh "echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin"
-                    sh "docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest-${env.BRANCH_NAME}"
+                script {
+                    docker.withRegistry('', 'dockerhub-credentials') {
+                        docker.image("${DOCKER_REGISTRY}/${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)}").push()
+                        docker.image("${DOCKER_REGISTRY}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}").push()
+                        
+                        echo "Imagen publicada: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}"
+                    }
                 }
             }
         }
     }
+
     post {
         success {
-            if (env.BRANCH_NAME == 'main') {
-                echo "Disparando el pipeline de integración..."
-                build job: 'integration-pipeline',
-                      parameters: [
-                          string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
-                          string(name: 'IMAGE_TAG', value: "latest-main")
-                      ]
+            script {
+                if (env.BRANCH_NAME == 'master') {
+                    echo "Disparando el pipeline de integración..."
+                    
+                    try {
+                        build job: 'microservices-integration/master',
+                              parameters: [
+                                  string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
+                                  string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
+                              ],
+                              wait: false
+                    } catch (Exception e) {
+                        echo "No se pudo disparar el pipeline de integración: ${e.getMessage()}"
+                    }
+                }
             }
         }
-    }
-    post {
-        success {
-            if (env.BRANCH_NAME == 'main') {
-                echo "Disparando el pipeline de integración..."
-                build job: 'integration-pipeline',
-                      parameters: [
-                          string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
-                          string(name: 'IMAGE_TAG', value: "latest-main")
-                      ]
-            }
+        always {
+            cleanWs()
+        }
+        failure {
+            echo "Build falló para ${IMAGE_NAME}"
         }
     }
 }

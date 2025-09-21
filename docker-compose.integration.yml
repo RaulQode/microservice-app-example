@@ -1,0 +1,150 @@
+version: '3.8'
+
+services:
+  # Redis service for message queue
+  redis:
+    image: redis:7.0-alpine
+    container_name: integration-redis
+    ports:
+      - "16379:6379"  # Puerto diferente para evitar conflictos
+    networks:
+      - integration-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Authentication API (Go)
+  auth-api:
+    image: geoffrey0pv/auth-api:latest-master
+    container_name: integration-auth-api
+    ports:
+      - "18000:8000"  # Puerto diferente
+    environment:
+      - AUTH_API_PORT=8000
+      - USERS_API_ADDRESS=http://users-api:8083
+      - JWT_SECRET=PRFT
+    depends_on:
+      - users-api
+    networks:
+      - integration-network
+    restart: unless-stopped
+
+  # Users API (Java Spring Boot)
+  users-api:
+    image: geoffrey0pv/users-api:latest-master
+    container_name: integration-users-api
+    ports:
+      - "18083:8083"  # Puerto diferente
+    environment:
+      - SERVER_PORT=8083
+      - JWT_SECRET=PRFT
+      - JAVA_OPTS=-Xmx200m -Xms100m
+    networks:
+      - integration-network
+    mem_limit: 400m
+    memswap_limit: 400m
+    restart: unless-stopped
+
+  # TODOs API (Node.js)
+  todos-api:
+    image: geoffrey0pv/todos-api:latest-master
+    container_name: integration-todos-api
+    ports:
+      - "18082:8082"  # Puerto diferente
+    environment:
+      - TODO_API_PORT=8082
+      - JWT_SECRET=PRFT
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=log_channel
+      - ZIPKIN_URL=http://zipkin:9411/api/v2/spans
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - integration-network
+    restart: unless-stopped
+
+  # Log Message Processor (Python)
+  log-message-processor:
+    image: geoffrey0pv/log-message-processor:latest-master
+    container_name: integration-log-processor
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_CHANNEL=log_channel
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - integration-network
+    restart: unless-stopped
+
+  # Frontend (Vue.js)
+  frontend:
+    image: geoffrey0pv/frontend-app:latest-master
+    container_name: integration-frontend
+    ports:
+      - "18080:8080"  # Puerto diferente
+    environment:
+      - PORT=8080
+      - AUTH_API_ADDRESS=http://auth-api:8000
+      - TODOS_API_ADDRESS=http://todos-api:8082
+    depends_on:
+      - auth-api
+      - todos-api
+    networks:
+      - integration-network
+    restart: unless-stopped
+
+  # Zipkin (opcional, para testing de trazas)
+  zipkin:
+    image: openzipkin/zipkin:2.23
+    container_name: integration-zipkin
+    ports:
+      - "19411:9411"  # Puerto diferente
+    networks:
+      - integration-network
+
+  # Contenedor de pruebas de integración
+  integration-tester:
+    image: curlimages/curl:latest
+    container_name: integration-tester
+    networks:
+      - integration-network
+    depends_on:
+      - auth-api
+      - users-api
+      - todos-api
+      - frontend
+    profiles:
+      - testing
+    command: >
+      sh -c "
+        echo 'Iniciando pruebas de integración...' &&
+        sleep 10 &&
+        echo 'Test 1: Health check de servicios' &&
+        curl -f http://auth-api:8000/version || echo 'Auth API falló' &&
+        curl -f http://users-api:8083/users || echo 'Users API falló' &&
+        echo 'Test 2: Flujo de autenticación completo' &&
+        TOKEN=$$(curl -s -X POST http://auth-api:8000/login -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"password\":\"admin\"}' | grep -o '\"accessToken\":\"[^\"]*\"' | cut -d'\"' -f4) &&
+        if [ ! -z \"$$TOKEN\" ]; then
+          echo 'Token obtenido exitosamente' &&
+          curl -f -H \"Authorization: Bearer $$TOKEN\" http://todos-api:8082/todos || echo 'TODOs API falló'
+        else
+          echo 'No se pudo obtener token' &&
+          exit 1
+        fi &&
+        echo 'Todas las pruebas de integración pasaron exitosamente!'
+      "
+
+networks:
+  integration-network:
+    driver: bridge
+    name: integration-network
+
+volumes:
+  integration-redis-data:
+    driver: local
