@@ -60,12 +60,9 @@ pipeline {
                         
                         echo "Construyendo imagen: ${DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${imageTag}"
                         
-                        // Construir imagen
-                        def customImage = docker.build("${IMAGE_NAME}:${shortCommit}", ".")
+                        def customImage = docker.build("${fullImageName}:${shortCommit}", ".")
                         
-                        // Etiquetar con el usuario del registry
-                        customImage.tag("${DOCKER_REGISTRY_USER}/${IMAGE_NAME}")
-                        customImage.tag("${imageTag}")
+                        customImage.tag(imageTag)
                         
                         env.FINAL_IMAGE_TAG = imageTag
                     }
