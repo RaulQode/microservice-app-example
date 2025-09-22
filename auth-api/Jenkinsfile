@@ -15,24 +15,16 @@ pipeline {
             }
         }
         
-        stage('Build') {
+        stage('Prepare Build') {
             steps {
                 dir("${SERVICE_DIR}") {
                     script {
-                        sh 'ls -la'
-                        
-                        docker.image('golang:1.22-alpine').inside('-e GOCACHE=/tmp/go-cache -e GOMODCACHE=/tmp/go-mod') {
-                            sh '''
-                                go version
-                                echo "GOCACHE: $GOCACHE"
-                                echo "GOMODCACHE: $GOMODCACHE"
-                                mkdir -p /tmp/go-cache /tmp/go-mod
-                                go mod download
-                                go mod tidy
-                                CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o auth-api .
-                                ls -la auth-api
-                            '''
-                        }
+                        sh '''
+                            echo "Preparando build para auth-api..."
+                            ls -la
+                            echo "Verificando archivos Go:"
+                            ls -la *.go go.* 2>/dev/null || echo "Archivos Go listados"
+                        '''
                     }
                 }
             }
@@ -95,11 +87,9 @@ pipeline {
                     echo "Disparando el pipeline de integración..."
                     
                     try {
-                        // Verificar si el job existe antes de intentar ejecutarlo
                         def integrationJobName = 'microservices-integration/master'
                         def alternativeJobName = 'microservice-app-example'
                         
-                        // Intentar con el nombre principal primero
                         try {
                             build job: integrationJobName,
                                   parameters: [
@@ -107,9 +97,9 @@ pipeline {
                                       string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
                                   ],
                                   wait: false
-                            echo "✅ Pipeline de integración disparado exitosamente: ${integrationJobName}"
+                            echo "Pipeline de integración disparado exitosamente: ${integrationJobName}"
                         } catch (Exception e1) {
-                            echo "⚠️ No se encontró el job: ${integrationJobName}"
+                            echo "No se encontró el job: ${integrationJobName}"
                             try {
                                 // Intentar con nombre alternativo
                                 build job: alternativeJobName,
@@ -118,20 +108,20 @@ pipeline {
                                           string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
                                       ],
                                       wait: false
-                                echo "✅ Pipeline de integración disparado exitosamente: ${alternativeJobName}"
+                                echo "Pipeline de integración disparado exitosamente: ${alternativeJobName}"
                             } catch (Exception e2) {
-                                echo "⚠️ No se encontró ningún pipeline de integración disponible"
+                                echo "No se encontró ningún pipeline de integración disponible"
                                 echo "   Nombres intentados: ${integrationJobName}, ${alternativeJobName}"
                                 echo "   Error 1: ${e1.getMessage()}"
                                 echo "   Error 2: ${e2.getMessage()}"
-                                echo "   💡 Verifica que el pipeline de integración esté configurado en Jenkins"
+                                echo "Verifica que el pipeline de integración esté configurado en Jenkins"
                             }
                         }
                     } catch (Exception e) {
-                        echo "❌ Error general al intentar disparar integración: ${e.getMessage()}"
+                        echo " Error general al intentar disparar integración: ${e.getMessage()}"
                     }
                 } else {
-                    echo "ℹ️ Branch '${env.BRANCH_NAME}' - No se dispara integración (solo master)"
+                    echo " Branch '${env.BRANCH_NAME}' - No se dispara integración (solo master)"
                 }
             }
         }
