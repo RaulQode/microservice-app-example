@@ -20,8 +20,15 @@ pipeline {
                 dir("${SERVICE_DIR}") {
                     script {
                         // Usar contenedor Node.js para las dependencias
-                        docker.image('node:8.17.0-alpine').inside {
+                        docker.image('node:8.17.0-alpine').inside('-e npm_config_cache=/tmp/.npm -e HOME=/tmp') {
                             sh '''
+                                # Crear directorio de cache con permisos
+                                mkdir -p /tmp/.npm
+                                
+                                # Limpiar cache si es necesario
+                                npm cache clean --force || true
+                                
+                                # Instalar dependencias
                                 npm install
                             '''
                         }
