@@ -12,18 +12,36 @@ pipeline {
             steps {
                 checkout scm
                 echo "Procesando cambios en ${IMAGE_NAME}"
-            }
+            } El comando systemctl sirve para administrar el sistema y los servicios en distribuciones de Linux que usan systemd, como una interfaz para controlar el inicio, detención, reinicio y el estado de los servicios. También permite habilitar o deshabilitar servicios para que se inicien automáticamente al arrancar el sistema, recargar configuraciones y revisar los registros para solucionar problemas. 
+
         }
 
         stage('Install Dependencies & Build') {
             steps {
                 dir("${SERVICE_DIR}") {
                     script {
-                        docker.image('node:8.17.0-alpine').inside {
-                            sh '''
-                                npm install
-                                npm run build
-                            '''
+                docker.image('node:8.17.0-alpine').inside('-e npm_config_cache=/tmp/.npm -e HOME=/tmp') {
+                    sh '''
+                        # Verificar versión de Node y npm
+                        node --version
+                        npm --version
+                        
+                        # Configurar cache de npm en directorio escribible
+                        export npm_config_cache=/tmp/.npm
+                        export HOME=/tmp
+                        
+                        # Crear directorio de cache
+                        mkdir -p /tmp/.npm
+                        
+                        # Instalar dependencias
+                        npm install
+                        
+                        # Build para producción
+                        npm run build
+                        
+                        # Verificar que el build se generó
+                        ls -la dist/ || echo "No se encontró directorio dist/"
+                    '''
                         }
                     }
                 }
