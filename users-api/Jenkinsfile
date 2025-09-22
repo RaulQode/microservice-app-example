@@ -104,15 +104,43 @@ pipeline {
                     echo "Disparando el pipeline de integración..."
                     
                     try {
-                        build job: 'microservices-integration/master',
-                              parameters: [
-                                  string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
-                                  string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
-                              ],
-                              wait: false
+                        // Verificar si el job existe antes de intentar ejecutarlo
+                        def integrationJobName = 'microservices-integration/master'
+                        def alternativeJobName = 'microservice-app-example'
+                        
+                        // Intentar con el nombre principal primero
+                        try {
+                            build job: integrationJobName,
+                                  parameters: [
+                                      string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
+                                      string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
+                                  ],
+                                  wait: false
+                            echo " Pipeline de integración disparado exitosamente: ${integrationJobName}"
+                        } catch (Exception e1) {
+                            echo " No se encontró el job: ${integrationJobName}"
+                            try {
+                                // Intentar con nombre alternativo
+                                build job: alternativeJobName,
+                                      parameters: [
+                                          string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
+                                          string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
+                                      ],
+                                      wait: false
+                                echo " Pipeline de integración disparado exitosamente: ${alternativeJobName}"
+                            } catch (Exception e2) {
+                                echo " No se encontró ningún pipeline de integración disponible"
+                                echo "   Nombres intentados: ${integrationJobName}, ${alternativeJobName}"
+                                echo "   Error 1: ${e1.getMessage()}"
+                                echo "   Error 2: ${e2.getMessage()}"
+                                echo " Verifica que el pipeline de integración esté configurado en Jenkins"
+                            }
+                        }
                     } catch (Exception e) {
-                        echo "No se pudo disparar el pipeline de integración: ${e.getMessage()}"
+                        echo " Error general al intentar disparar integración: ${e.getMessage()}"
                     }
+                } else {
+                    echo "ℹ Branch '${env.BRANCH_NAME}' - No se dispara integración (solo master)"
                 }
             }
         }
