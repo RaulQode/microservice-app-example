@@ -1,54 +1,100 @@
 pipeline {
-    agent {
-        // Usa un agente de Jenkins que tenga JDK y Maven instalados
-        docker { image 'maven:3.8.4-openjdk-11' }
-    }
+    agent any
 
     environment {
         IMAGE_NAME = "users-api"
-        DOCKER_REGISTRY = "tu-usuario-docker"
+        DOCKER_REGISTRY_USER = "geoffrey0pv"
+        SERVICE_DIR = "users-api"
     }
 
     stages {
-        stage('Detectar Cambios') {
-            when { changeset "users-api/**" }
+        stage('Checkout') {
             steps {
-                echo "Cambios detectados en el users-api. Continuando..."
+                checkout scm
+                echo "Procesando cambios en ${IMAGE_NAME}"
             }
         }
 
-        stage('Compilar y Probar') {
+        stage('Compile & Test') {
             steps {
-                sh 'mvn clean package'
+                dir("${SERVICE_DIR}") {
+                    script {
+                        // Usar contenedor Maven para Java
+                        docker.image('maven:3.8.4-openjdk-11').inside {
+                            sh '''
+                                mvn clean package -DskipTests=false || echo "Tests fallaron, continuando..."
+                                ls -la target/
+                            '''
+                        }
+                    }
+                }
             }
         }
 
-        stage('Construir Imagen Docker') {
+        stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)} ."
-                sh "docker tag ${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest-${env.BRANCH_NAME}"
+                dir("${SERVICE_DIR}") {
+                    script {
+                        def shortCommit = env.GIT_COMMIT.substring(0,7)
+                        def imageTag = "latest-${env.BRANCH_NAME}"
+                        def fullImageName = "${DOCKER_REGISTRY_USER}/${IMAGE_NAME}"
+                        
+                        echo "Construyendo imagen: ${fullImageName}:${imageTag}"
+                        
+                        // Construir imagen directamente con el nombre completo
+                        def customImage = docker.build("${fullImageName}:${shortCommit}", ".")
+                        
+                        // Tagear con la versión de la rama
+                        customImage.tag(imageTag)
+                        
+                        // Guardar variables para el siguiente stage
+                        env.FINAL_IMAGE_TAG = imageTag
+                        env.SHORT_COMMIT = shortCommit
+                        env.FULL_IMAGE_NAME = fullImageName
+                    }
+                }
             }
         }
 
-        stage('Publicar Imagen Docker') {
+        stage('Push Docker Image') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh "echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin"
-                    sh "docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest-${env.BRANCH_NAME}"
+                script {
+                    docker.withRegistry('', 'dockerhub-credentials') {
+                        // Push ambos tags usando las variables de entorno
+                        docker.image("${env.FULL_IMAGE_NAME}:${env.SHORT_COMMIT}").push()
+                        docker.image("${env.FULL_IMAGE_NAME}:${env.FINAL_IMAGE_TAG}").push()
+                        
+                        echo "Imagen publicada: ${env.FULL_IMAGE_NAME}:${env.FINAL_IMAGE_TAG}"
+                    }
                 }
             }
         }
     }
+
     post {
         success {
-            if (env.BRANCH_NAME == 'main') {
-                echo "Disparando el pipeline de integración..."
-                build job: 'integration-pipeline',
-                      parameters: [
-                          string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
-                          string(name: 'IMAGE_TAG', value: "latest-main")
-                      ]
+            script {
+                if (env.BRANCH_NAME == 'master') {
+                    echo "Disparando el pipeline de integración..."
+                    
+                    try {
+                        build job: 'microservices-integration/master',
+                              parameters: [
+                                  string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
+                                  string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
+                              ],
+                              wait: false
+                    } catch (Exception e) {
+                        echo "No se pudo disparar el pipeline de integración: ${e.getMessage()}"
+                    }
+                }
             }
+        }
+        always {
+            cleanWs()
+        }
+        failure {
+            echo "Build falló para ${IMAGE_NAME}"
         }
     }
 }

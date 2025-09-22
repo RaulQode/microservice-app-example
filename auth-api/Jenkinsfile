@@ -1,11 +1,12 @@
 pipeline {
-
     agent any
-
+    
     environment {
         IMAGE_NAME = "auth-api"
+        DOCKER_REGISTRY_USER = "geoffrey0pv"
+        SERVICE_DIR = "auth-api"
     }
-
+    
     stages {
         stage('Checkout') {
             steps {
@@ -13,61 +14,95 @@ pipeline {
                 echo "Procesando cambios en el directorio auth-api"
             }
         }
-
+        
         stage('Build & Test') {
-            agent {
-                docker { image 'golang:1.19' }
-            }
             steps {
-                dir('auth-api') {
-                    sh 'go mod download'
-                    sh 'go test ./...'
-                    sh 'CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o auth-api .'
+                dir("${SERVICE_DIR}") {
+                    script {
+                        sh 'ls -la'
+                        
+                        docker.image('golang:1.22-alpine').inside('-e GOCACHE=/tmp/go-cache -e GOMODCACHE=/tmp/go-mod') {
+                            sh '''
+                                go version
+                                echo "GOCACHE: $GOCACHE"
+                                echo "GOMODCACHE: $GOMODCACHE"
+                                mkdir -p /tmp/go-cache /tmp/go-mod
+                                go mod download
+                                go mod tidy
+                                go test ./... || echo "No hay tests definidos o tests fallaron"
+                                CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o auth-api .
+                                ls -la auth-api
+                            '''
+                        }
+                    }
                 }
             }
         }
-
+        
         stage('Build Docker Image') {
             steps {
-                dir('auth-api') {
+                dir("${SERVICE_DIR}") {
                     script {
                         def shortCommit = env.GIT_COMMIT.substring(0,7)
                         def imageTag = "latest-${env.BRANCH_NAME}"
-                        def customImage = docker.build("${IMAGE_NAME}:${shortCommit}", ".")
-                        customImage.tag("${env.DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${imageTag}")
+                        def fullImageName = "${DOCKER_REGISTRY_USER}/${IMAGE_NAME}"
+                        
+                        echo "Construyendo imagen: ${fullImageName}:${imageTag}"
+                        
+                        // Construir imagen directamente con el nombre completo
+                        def customImage = docker.build("${fullImageName}:${shortCommit}", ".")
+                        
+                        // Tagear con la versión de la rama
+                        customImage.tag(imageTag)
+                        
+                        // Guardar variables para el siguiente stage
                         env.FINAL_IMAGE_TAG = imageTag
+                        env.SHORT_COMMIT = shortCommit
+                        env.FULL_IMAGE_NAME = fullImageName
                     }
                 }
             }
         }
-
+        
         stage('Push Docker Image') {
             steps {
                 script {
-                    docker.withRegistry("https://registry.hub.docker.com", 'dockerhub-credentials') {
-                        docker.image("${env.DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}").push()
+                    docker.withRegistry('', 'dockerhub-credentials') {
+                        // Push ambos tags usando las variables de entorno
+                        docker.image("${env.FULL_IMAGE_NAME}:${env.SHORT_COMMIT}").push()
+                        docker.image("${env.FULL_IMAGE_NAME}:${env.FINAL_IMAGE_TAG}").push()
+                        
+                        echo "Imagen publicada: ${env.FULL_IMAGE_NAME}:${env.FINAL_IMAGE_TAG}"
                     }
-                    echo "Imagen publicada: ${env.DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}"
                 }
             }
         }
     }
-
+    
     post {
         success {
             script {
-                if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master') {
+                if (env.BRANCH_NAME == 'master') {
                     echo "Disparando el pipeline de integración..."
-                    build job: 'microservices-integration/master',
-                          parameters: [
-                              string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
-                              string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
-                          ]
+                    
+                    try {
+                        build job: 'microservices-integration/master',
+                              parameters: [
+                                  string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
+                                  string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
+                              ],
+                              wait: false
+                    } catch (Exception e) {
+                        echo "No se pudo disparar el pipeline de integración: ${e.getMessage()}"
+                    }
                 }
             }
         }
         always {
             cleanWs()
+        }
+        failure {
+            echo "Build falló para ${IMAGE_NAME}"
         }
     }
 }

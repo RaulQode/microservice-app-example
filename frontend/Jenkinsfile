@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         IMAGE_NAME = "frontend-app"
-        DOCKER_REGISTRY = "geoffrey0pv"
+        DOCKER_REGISTRY_USER = "geoffrey0pv"
         SERVICE_DIR = "frontend"
     }
 
@@ -36,13 +36,20 @@ pipeline {
                     script {
                         def shortCommit = env.GIT_COMMIT.substring(0,7)
                         def imageTag = "latest-${env.BRANCH_NAME}"
+                        def fullImageName = "${DOCKER_REGISTRY_USER}/${IMAGE_NAME}"
                         
-                        echo "Construyendo imagen: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${imageTag}"
+                        echo "Construyendo imagen: ${fullImageName}:${imageTag}"
                         
-                        def image = docker.build("${DOCKER_REGISTRY}/${IMAGE_NAME}:${shortCommit}")
-                        image.tag(imageTag)
+                        // Construir imagen directamente con el nombre completo
+                        def customImage = docker.build("${fullImageName}:${shortCommit}", ".")
                         
+                        // Tagear con la versión de la rama
+                        customImage.tag(imageTag)
+                        
+                        // Guardar variables para el siguiente stage
                         env.FINAL_IMAGE_TAG = imageTag
+                        env.SHORT_COMMIT = shortCommit
+                        env.FULL_IMAGE_NAME = fullImageName
                     }
                 }
             }
@@ -52,10 +59,11 @@ pipeline {
             steps {
                 script {
                     docker.withRegistry('', 'dockerhub-credentials') {
-                        docker.image("${DOCKER_REGISTRY}/${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)}").push()
-                        docker.image("${DOCKER_REGISTRY}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}").push()
+                        // Push ambos tags usando las variables de entorno
+                        docker.image("${env.FULL_IMAGE_NAME}:${env.SHORT_COMMIT}").push()
+                        docker.image("${env.FULL_IMAGE_NAME}:${env.FINAL_IMAGE_TAG}").push()
                         
-                        echo "Imagen publicada: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}"
+                        echo "Imagen publicada: ${env.FULL_IMAGE_NAME}:${env.FINAL_IMAGE_TAG}"
                     }
                 }
             }
