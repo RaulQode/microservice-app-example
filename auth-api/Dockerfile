@@ -1,4 +1,4 @@
-# Build stage
+# Multi-stage build optimizado
 FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
@@ -6,19 +6,22 @@ WORKDIR /app
 # Install git for go modules
 RUN apk add --no-cache git
 
-# Copy source code first
-COPY . .
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
 
-# Initialize go module and download dependencies
+# Download dependencies (this layer will be cached if go.mod/go.sum don't change)
 ENV GO111MODULE=on
-RUN go mod init github.com/bortizf/microservice-app-example/tree/master/auth-api || true
-RUN go mod tidy
 RUN go mod download
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o auth-api .
+# Copy source code
+COPY . .
 
-# Final stage
+# Build the application only if auth-api binary doesn't exist
+RUN if [ ! -f auth-api ]; then \
+        CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o auth-api .; \
+    fi
+
+# Final stage - minimal alpine image
 FROM alpine:latest
 
 RUN apk --no-cache add ca-certificates
