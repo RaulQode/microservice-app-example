@@ -99,46 +99,44 @@ pipeline {
         success {
             script {
                 if (env.BRANCH_NAME == 'master') {
-                    echo "Disparando el pipeline de integración..."
+                    echo "Disparando el pipeline de integracion..."
                     
                     try {
-                        // Verificar si el job existe antes de intentar ejecutarlo
-                        def integrationJobName = 'microservices-integration/master'
-                        def alternativeJobName = 'microservice-app-example'
+                        // Nombres posibles del job de integración
+                        def possibleJobNames = [
+                            'microservices-integration/master',
+                            'microservices-integration'
+                        ]
                         
-                        // Intentar con el nombre principal primero
-                        try {
-                            build job: integrationJobName,
-                                  parameters: [
-                                      string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
-                                      string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
-                                  ],
-                                  wait: false
-                            echo " Pipeline de integración disparado exitosamente: ${integrationJobName}"
-                        } catch (Exception e1) {
-                            echo " No se encontró el job: ${integrationJobName}"
+                        def jobTriggered = false
+                        
+                        for (jobName in possibleJobNames) {
                             try {
-                                // Intentar con nombre alternativo
-                                build job: alternativeJobName,
+                                build job: jobName,
                                       parameters: [
                                           string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
                                           string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
                                       ],
                                       wait: false
-                                echo " Pipeline de integración disparado exitosamente: ${alternativeJobName}"
-                            } catch (Exception e2) {
-                                echo " No se encontró ningún pipeline de integración disponible"
-                                echo "   Nombres intentados: ${integrationJobName}, ${alternativeJobName}"
-                                echo "   Error 1: ${e1.getMessage()}"
-                                echo "   Error 2: ${e2.getMessage()}"
-                                echo " Verifica que el pipeline de integración esté configurado en Jenkins"
+                                echo "Pipeline de integracion disparado exitosamente: ${jobName}"
+                                jobTriggered = true
+                                break
+                            } catch (Exception e) {
+                                echo "No se encontro el job: ${jobName}"
                             }
                         }
+                        
+                        if (!jobTriggered) {
+                            echo "No se pudo encontrar ningun pipeline de integracion"
+                            echo "Jobs intentados: ${possibleJobNames.join(', ')}"
+                            echo "Verifica que el pipeline de integracion este configurado en Jenkins"
+                        }
+                        
                     } catch (Exception e) {
-                        echo " Error general al intentar disparar integración: ${e.getMessage()}"
+                        echo "Error general al intentar disparar integracion: ${e.getMessage()}"
                     }
                 } else {
-                    echo "ℹ Branch '${env.BRANCH_NAME}' - No se dispara integración (solo master)"
+                    echo "Branch '${env.BRANCH_NAME}' - No se dispara integracion (solo master)"
                 }
             }
         }
@@ -146,7 +144,7 @@ pipeline {
             cleanWs()
         }
         failure {
-            echo "Build falló para ${IMAGE_NAME}"
+            echo "Build fallo para ${IMAGE_NAME}"
         }
     }
 }

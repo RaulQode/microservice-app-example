@@ -56,7 +56,7 @@ pipeline {
                     # Verificar auth-api
                     for i in {1..10}; do
                         if curl -f -m 5 http://localhost:18000/version 2>/dev/null; then
-                            echo "✅ Auth API está respondiendo"
+                            echo "Auth API está respondiendo"
                             break
                         fi
                         echo "Reintentando Auth API (\$i/10)..."
@@ -66,7 +66,7 @@ pipeline {
                     # Verificar users-api
                     for i in {1..10}; do
                         if curl -f -m 5 http://localhost:18083/users 2>/dev/null; then
-                            echo "✅ Users API está respondiendo"
+                            echo " Users API está respondiendo"
                             break
                         fi
                         echo "Reintentando Users API (\$i/10)..."
@@ -110,7 +110,7 @@ pipeline {
                         
                         # Probar acceso a TODOs (si está disponible)
                         curl -f -m 10 -H "Authorization: Bearer \$TOKEN" \\
-                             http://localhost:18082/todos || echo "⚠️ TODOs API no responde (puede no estar listo)"
+                             http://localhost:18082/todos || echo "TODOs API no responde (puede no estar listo)"
                              
                         # Probar acceso a Users
                         curl -f -m 10 -H "Authorization: Bearer \$TOKEN" \\
