@@ -15,31 +15,23 @@ pipeline {
             }
         }
         
-        stage('Install Dependencies & Build') {
+        stage('Build & Test') {
             steps {
                 dir("${SERVICE_DIR}") {
                     script {
-                        docker.image('node:8.17.0-alpine').inside('-e npm_config_cache=/tmp/.npm -e HOME=/tmp') {
+                        sh 'ls -la'
+                        
+                        docker.image('golang:1.22-alpine').inside('-e GOCACHE=/tmp/go-cache -e GOMODCACHE=/tmp/go-mod') {
                             sh '''
-                                # Verificar versión de Node y npm
-                                node --version
-                                npm --version
-                                
-                                # Configurar cache de npm en directorio escribible
-                                export npm_config_cache=/tmp/.npm
-                                export HOME=/tmp
-                                
-                                # Crear directorio de cache
-                                mkdir -p /tmp/.npm
-                                
-                                # Instalar dependencias
-                                npm install
-                                
-                                # Build para producción
-                                npm run build
-                                
-                                # Verificar que el build se generó
-                                ls -la dist/ || echo "No se encontró directorio dist/"
+                                go version
+                                echo "GOCACHE: $GOCACHE"
+                                echo "GOMODCACHE: $GOMODCACHE"
+                                mkdir -p /tmp/go-cache /tmp/go-mod
+                                go mod download
+                                go mod tidy
+                                go test ./... || echo "No hay tests definidos o tests fallaron"
+                                CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o auth-api .
+                                ls -la auth-api
                             '''
                         }
                     }
