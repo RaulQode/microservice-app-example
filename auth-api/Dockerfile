@@ -6,14 +6,14 @@ WORKDIR /app
 # Install git for go modules
 RUN apk add --no-cache git
 
-# Copy go mod files
-COPY go.mod go.sum* ./
-
-# Download dependencies
-RUN go mod download
-
-# Copy source code
+# Copy source code first
 COPY . .
+
+# Initialize go module and download dependencies
+ENV GO111MODULE=on
+RUN go mod init github.com/bortizf/microservice-app-example/tree/master/auth-api || true
+RUN go mod tidy
+RUN go mod download
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o auth-api .
