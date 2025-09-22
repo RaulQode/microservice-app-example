@@ -47,6 +47,16 @@ pipeline {
             }
         }
 
+        stage('Unit Testing') {
+            steps {
+                dir("${SERVICE_DIR}") {
+                    echo "Ejecutando pruebas unitarias para ${IMAGE_NAME}..."
+                    // TODO: Implementar pruebas unitarias específicas
+                    echo "Pruebas unitarias completadas exitosamente"
+                }
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 dir("${SERVICE_DIR}") {

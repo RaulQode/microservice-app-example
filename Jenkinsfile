@@ -114,7 +114,7 @@ pipeline {
                              
                         # Probar acceso a Users
                         curl -f -m 10 -H "Authorization: Bearer \$TOKEN" \\
-                             http://localhost:18083/users/admin || echo "⚠️ Users API no responde con auth"
+                             http://localhost:18083/users/admin || echo "+ Users API no responde con auth"
                     else
                         echo " No se pudo obtener token válido"
                     fi
