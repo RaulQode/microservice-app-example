@@ -104,38 +104,15 @@ pipeline {
                     echo "Disparando el pipeline de integracion..."
                     
                     try {
-                        // Nombres posibles del job de integración
-                        def possibleJobNames = [
-                            'microservices-integration/master',
-                            'microservices-integration'
-                        ]
-                        
-                        def jobTriggered = false
-                        
-                        for (jobName in possibleJobNames) {
-                            try {
-                                build job: jobName,
-                                      parameters: [
-                                          string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
-                                          string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
-                                      ],
-                                      wait: false
-                                echo "Pipeline de integracion disparado exitosamente: ${jobName}"
-                                jobTriggered = true
-                                break
-                            } catch (Exception e) {
-                                echo "No se encontro el job: ${jobName}"
-                            }
-                        }
-                        
-                        if (!jobTriggered) {
-                            echo "No se pudo encontrar ningun pipeline de integracion"
-                            echo "Jobs intentados: ${possibleJobNames.join(', ')}"
-                            echo "Verifica que el pipeline de integracion este configurado en Jenkins"
-                        }
-                        
+                        build job: 'microservice-app-taller/microservices-integration/master',
+                              parameters: [
+                                  string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
+                                  string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")
+                              ],
+                              wait: false
+                        echo "Pipeline de integracion disparado exitosamente"
                     } catch (Exception e) {
-                        echo "Error general al intentar disparar integracion: ${e.getMessage()}"
+                        echo "Error al disparar pipeline de integracion: ${e.getMessage()}"
                     }
                 } else {
                     echo "Branch '${env.BRANCH_NAME}' - No se dispara integracion (solo master)"
