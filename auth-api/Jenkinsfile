@@ -21,28 +21,16 @@ pipeline {
                     script {
                         sh 'ls -la'
                         
-                        // Usar Go 1.22 con variables de entorno para permisos
                         docker.image('golang:1.22-alpine').inside('-e GOCACHE=/tmp/go-cache -e GOMODCACHE=/tmp/go-mod') {
                             sh '''
-                                # Verificar versión y configuración
                                 go version
                                 echo "GOCACHE: $GOCACHE"
                                 echo "GOMODCACHE: $GOMODCACHE"
-                                
-                                # Crear directorios de cache con permisos correctos
                                 mkdir -p /tmp/go-cache /tmp/go-mod
-                                
-                                # Descargar dependencias
                                 go mod download
                                 go mod tidy
-                                
-                                # Tests (opcional, puede fallar si no hay tests)
                                 go test ./... || echo "No hay tests definidos o tests fallaron"
-                                
-                                # Compilar
                                 CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o auth-api .
-                                
-                                # Verificar binario
                                 ls -la auth-api
                             '''
                         }
@@ -57,14 +45,20 @@ pipeline {
                     script {
                         def shortCommit = env.GIT_COMMIT.substring(0,7)
                         def imageTag = "latest-${env.BRANCH_NAME}"
+                        def fullImageName = "${DOCKER_REGISTRY_USER}/${IMAGE_NAME}"
                         
-                        echo "Construyendo imagen: ${DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${imageTag}"
+                        echo "Construyendo imagen: ${fullImageName}:${imageTag}"
                         
+                        // Construir imagen directamente con el nombre completo
                         def customImage = docker.build("${fullImageName}:${shortCommit}", ".")
                         
+                        // Tagear con la versión de la rama
                         customImage.tag(imageTag)
                         
+                        // Guardar variables para el siguiente stage
                         env.FINAL_IMAGE_TAG = imageTag
+                        env.SHORT_COMMIT = shortCommit
+                        env.FULL_IMAGE_NAME = fullImageName
                     }
                 }
             }
@@ -74,10 +68,11 @@ pipeline {
             steps {
                 script {
                     docker.withRegistry('', 'dockerhub-credentials') {
-                        docker.image("${DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}").push()
-                        docker.image("${DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${env.GIT_COMMIT.substring(0,7)}").push()
+                        // Push ambos tags usando las variables de entorno
+                        docker.image("${env.FULL_IMAGE_NAME}:${env.SHORT_COMMIT}").push()
+                        docker.image("${env.FULL_IMAGE_NAME}:${env.FINAL_IMAGE_TAG}").push()
                         
-                        echo "Imagen publicada: ${DOCKER_REGISTRY_USER}/${IMAGE_NAME}:${env.FINAL_IMAGE_TAG}"
+                        echo "Imagen publicada: ${env.FULL_IMAGE_NAME}:${env.FINAL_IMAGE_TAG}"
                     }
                 }
             }
