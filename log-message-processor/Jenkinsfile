@@ -22,7 +22,13 @@ pipeline {
                         // Usar contenedor Python para las dependencias
                         docker.image('python:3.9-slim').inside {
                             sh '''
-                                pip install -r requirements.txt
+                                # Configurar directorio para instalación de usuario
+                                export PYTHONUSERBASE=/tmp/python-packages
+                                export PATH=$PYTHONUSERBASE/bin:$PATH
+                                
+                                # Instalar dependencias en directorio de usuario
+                                pip install --user -r requirements.txt
+                                
                                 # Ejecutar tests si existen
                                 python -m pytest tests/ || echo "No hay tests definidos"
                             '''
