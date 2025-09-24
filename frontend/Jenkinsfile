@@ -102,7 +102,7 @@ pipeline {
                     echo "Disparando el pipeline de integracion..."
                     
                     try {
-                        build job: 'microservice-app-taller/microservices-integration/master',
+                        build job: 'microservices-integration/master',
                               parameters: [
                                   string(name: 'TRIGGERING_SERVICE', value: "${IMAGE_NAME}"),
                                   string(name: 'IMAGE_TAG', value: "${env.FINAL_IMAGE_TAG}")

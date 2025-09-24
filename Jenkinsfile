@@ -75,51 +75,38 @@ pipeline {
                 """
             }
         }
-        
+    
         stage('Ejecutar Pruebas de Integración') {
             steps {
                 echo "Ejecutando pruebas de integración..."
                 
-                // Mostrar logs para debugging
-                sh "docker-compose -f docker-compose.integration.yml logs --tail=50 || true"
-                
-                // Ejecutar pruebas básicas de integración
-                sh """
-                    echo " Ejecutando pruebas básicas de integración..."
+                sh """#!/bin/bash
+                    set -e # Termina el script si un comando falla
                     
-                    # Test 1: Verificar que todos los servicios estén corriendo
-                    echo "Test 1: Verificando servicios..."
-                    docker-compose -f docker-compose.integration.yml ps
+                    echo "--- Ejecutando pruebas básicas de integración ---"
                     
-                    # Test 2: Pruebas de conectividad básicas
-                    echo "Test 2: Pruebas de conectividad..."
-                    
-                    # Verificar auth-api
-                    curl -f -m 10 http://localhost:18000/version || echo " Auth API no responde"
-                    
-                    # Test 3: Flujo completo de autenticación
-                    echo "Test 3: Flujo de autenticación..."
+                    # Test 1: Obtener token de autenticación
+                    echo "Test 1: Obteniendo token de autenticación..."
                     TOKEN=\$(curl -s -m 10 -X POST http://localhost:18000/login \\
                                 -H "Content-Type: application/json" \\
                                 -d '{"username":"admin","password":"admin"}' \\
                                 | grep -o '"accessToken":"[^"]*"' \\
-                                | cut -d'"' -f4 2>/dev/null) || echo "Login falló"
-                    
-                    if [ ! -z "\$TOKEN" ] && [ "\$TOKEN" != "null" ]; then
-                        echo " Token obtenido exitosamente: \${TOKEN:0:20}..."
-                        
-                        # Probar acceso a TODOs (si está disponible)
-                        curl -f -m 10 -H "Authorization: Bearer \$TOKEN" \\
-                             http://localhost:18082/todos || echo "TODOs API no responde (puede no estar listo)"
-                             
-                        # Probar acceso a Users
-                        curl -f -m 10 -H "Authorization: Bearer \$TOKEN" \\
-                             http://localhost:18083/users/admin || echo "+ Users API no responde con auth"
-                    else
-                        echo " No se pudo obtener token válido"
+                                | cut -d'"' -f4)
+
+                    # Test 2: Validar que el token no esté vacío
+                    echo "Test 2: Validando token..."
+                    if [ -z "\$TOKEN" ] || [ "\$TOKEN" == "null" ]; then
+                        echo "Error: No se pudo obtener un token de autenticación válido."
+                        exit 1
                     fi
+                    echo "Token obtenido exitosamente."
+
+                    # Test 3: Usar el token para acceder a un recurso protegido (todos-api)
+                    echo "Test 3: Accediendo a TODOs API..."
+                    curl -f -s -m 10 -H "Authorization: Bearer \$TOKEN" http://localhost:18082/todos > /dev/null
+                    echo "Acceso a TODOs API exitoso."
                     
-                    echo " Pruebas de integración completadas"
+                    echo "--- ¡Todas las pruebas de integración pasaron exitosamente! ---"
                 """
             }
         }
@@ -138,7 +125,7 @@ pipeline {
                     fi
                     
                     # Verificar que los contenedores siguen corriendo
-                    echo "📋 Contenedores activos:"
+                    echo "Contenedores activos:"
                     docker-compose -f docker-compose.integration.yml ps
                 """
             }
